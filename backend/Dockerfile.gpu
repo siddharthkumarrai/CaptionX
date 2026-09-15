@@ -1,0 +1,28 @@
+# Dockerfile.gpu — WhisperX GPU worker
+# Requires: NVIDIA Container Toolkit on host
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
+    ffmpeg \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
+
+COPY requirements.gpu.txt .
+RUN pip install --no-cache-dir -r requirements.gpu.txt
+
+COPY . .
+
+# Pre-download WhisperX models at build time to avoid cold start
+# (Comment out to speed up build; models will download on first run)
+# RUN python -c "import whisperx; whisperx.load_model('large-v3-turbo', 'cpu', compute_type='int8')"

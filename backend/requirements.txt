@@ -1,0 +1,13 @@
+fastapi>=0.104.0
+uvicorn[standard]>=0.23.2
+python-multipart>=0.0.6
+sqlalchemy>=2.0.23
+asyncpg>=0.28.0
+pydantic>=2.4.2
+pydantic-settings>=2.0.3
+celery>=5.3.4
+redis>=5.0.1
+boto3>=1.28.78
+Pillow>=10.1.0
+passlib[bcrypt]>=1.7.4
+PyJWT>=2.8.0

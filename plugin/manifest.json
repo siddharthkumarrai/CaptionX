@@ -1,0 +1,41 @@
+{
+  "manifestVersion": 5,
+  "id": "com.captionx.premiere.v1",
+  "name": "CaptionX for Premiere",
+  "version": "1.0.0",
+  "description": "Word-level animated captions for Adobe Premiere — powered by AI.",
+  "host": [
+    {
+      "app": "PPRO",
+      "minVersion": "26.0"
+    }
+  ],
+  "entryPoints": [
+    {
+      "type": "panel",
+      "id": "mainPanel",
+      "label": "CaptionX",
+      "main": "index.html",
+      "minimumSize": { "width": 320, "height": 480 },
+      "defaultSize": { "width": 380, "height": 700 },
+      "maximumSize": { "width": 600, "height": 900 }
+    }
+  ],
+  "requiredPermissions": {
+    "localFileSystem": "request",
+    "network": {
+      "domains": [
+        "https://api.captionx.app",
+        "wss://api.captionx.app",
+        "https://cdn.captionx.app"
+      ]
+    },
+    "launchProcess": {
+      "schemes": ["https"]
+    },
+    "clipboard": "readAndWrite",
+    "ipc": {
+      "enablePluginCommunication": true
+    }
+  }
+}

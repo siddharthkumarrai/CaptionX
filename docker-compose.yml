@@ -1,0 +1,119 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: captionx
+      POSTGRES_USER: captionx
+      POSTGRES_PASSWORD: captionx
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U captionx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI App ────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    env_file: ./backend/.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./assets:/app/assets:ro
+    command: >
+      uvicorn main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --log-level info
+
+  # ── Celery CPU Worker (PNG rendering) ─────────────────────────────────────
+  celery-cpu:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    env_file: ./backend/.env
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./backend:/app
+      - ./assets:/app/assets:ro
+    command: >
+      celery -A app.workers.celery_app worker
+      --queues cpu
+      --concurrency 4
+      --loglevel info
+      --hostname cpu-worker@%%h
+
+  # ── Celery GPU Worker (WhisperX) ───────────────────────────────────────────
+  celery-gpu:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.gpu
+    restart: unless-stopped
+    env_file: ./backend/.env
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./backend:/app
+      - ./assets:/app/assets:ro
+      - whisper_models:/root/.cache/whisperx
+    command: >
+      celery -A app.workers.celery_app worker
+      --queues gpu
+      --concurrency 1
+      --loglevel info
+      --hostname gpu-worker@%%h
+    # Uncomment for GPU access (requires nvidia-container-toolkit):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ── Flower (Celery monitoring) ─────────────────────────────────────────────
+  flower:
+    image: mher/flower:2.0
+    restart: unless-stopped
+    command: celery flower --broker=${REDIS_URL:-redis://redis:6379/0} --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+
+volumes:
+  pgdata:
+  redisdata:
+  whisper_models:

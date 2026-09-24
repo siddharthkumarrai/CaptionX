@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,11 +24,23 @@ bearer = HTTPBearer(auto_error=False)
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
-class RegisterRequest(BaseModel):
-    email: EmailStr
+class PasswordRequest(BaseModel):
     password: str
 
-class LoginRequest(BaseModel):
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        if len(value) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be 72 UTF-8 bytes or fewer")
+        return value
+
+
+class RegisterRequest(PasswordRequest):
+    email: EmailStr
+
+class LoginRequest(PasswordRequest):
     email: EmailStr
     password: str
 
@@ -73,9 +85,6 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
-    if len(req.password) < 8:
-        raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
-
     user = User(
         email=req.email,
         hashed_password=hash_password(req.password),
@@ -144,6 +153,7 @@ async def refresh_token(
 async def validate_token(user: User = Depends(get_current_user)):
     return {
         "valid": True,
+        "email": user.email,
         "plan": user.plan,
         "credits_remaining": _credits_remaining(user),
         "features": {

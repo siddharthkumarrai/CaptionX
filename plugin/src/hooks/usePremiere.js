@@ -13,12 +13,30 @@
  * (Derived from: 254016000000 = LCM of all standard video frame rates)
  */
 
-// UXP runtime provides this — externalised in webpack.config.js
-const { app } = typeof window !== "undefined" && window.premierepro
-  ? window.premierepro
-  : require("premierepro");
+// UXP exposes these modules, while CEP does not. Keep them optional so the UI
+// can render in CEP and report a useful error only when a Premiere action runs.
+function loadUxpModule(name) {
+  if (typeof require === "function") {
+    try {
+      return require(name);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
-const { storage } = require("uxp");
+const premierepro = typeof window !== "undefined" ? window.premierepro : null;
+const premiereModule = premierepro || loadUxpModule("premierepro");
+const uxpModule = typeof window !== "undefined" ? window.uxp : null;
+const storage = uxpModule?.storage || loadUxpModule("uxp")?.storage;
+const app = premiereModule?.app;
+
+function requireUxpRuntime() {
+  if (!app || !storage) {
+    throw new Error("CaptionX Premiere actions require the UXP runtime.");
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -35,6 +53,7 @@ function secToTick(sec) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getActiveProject() {
+  requireUxpRuntime();
   const project = await app.Project.getActiveProject();
   if (!project) throw new Error("No active Premiere project. Please open a project first.");
   return project;
@@ -62,10 +81,26 @@ export async function getSequenceResolution() {
 
 /**
  * importAndPlaceCaptions
- * @param {Array<{localPath: string, startSec: number, durationSec: number, trackIndex: number}>} captionAssets
+ * @param {Array<{localPath: string, startSec: number, durationSec: number, trackIndex: number, label?: string}>} captionAssets
+ * @param {{bin?: {root: string, video: string, job: string, captions: string, sfx: string}}} [options]
+ *   Optional CEP-only bin destination ({root}/{video}/{job}/{captions}).
+ *   Ignored on the UXP path, which has no bin API wired.
  */
-export async function importAndPlaceCaptions(captionAssets) {
+export async function importAndPlaceCaptions(captionAssets, options = {}) {
   if (!captionAssets || captionAssets.length === 0) return;
+
+  // ── CEP fallback (classic CEP panel — no UXP runtime) ─────────────────────
+  if (!app || !storage) {
+    const { placeAssetsCep, cepAvailable } = await import("../api/cep");
+    if (!cepAvailable()) {
+      throw new Error("CaptionX Premiere actions require the UXP or CEP runtime.");
+    }
+    const result = await placeAssetsCep({ captionClips: captionAssets, sfxClips: [], bin: options.bin });
+    if (result.failed > 0) {
+      console.warn(`[CaptionX] ${result.failed} clips failed to place via CEP host.`);
+    }
+    return result;
+  }
 
   const { project, sequence } = await getActiveSequence();
 
@@ -99,9 +134,23 @@ export async function importAndPlaceCaptions(captionAssets) {
 /**
  * importAndPlaceSFX
  * @param {Array<{localPath: string, startSec: number, trackIndex: number}>} sfxAssets
+ * @param {{bin?: object}} [options] — same CEP-only bin destination as above.
  */
-export async function importAndPlaceSFX(sfxAssets) {
+export async function importAndPlaceSFX(sfxAssets, options = {}) {
   if (!sfxAssets || sfxAssets.length === 0) return;
+
+  // ── CEP fallback (classic CEP panel — no UXP runtime) ─────────────────────
+  if (!app || !storage) {
+    const { placeAssetsCep, cepAvailable } = await import("../api/cep");
+    if (!cepAvailable()) {
+      throw new Error("CaptionX Premiere actions require the UXP or CEP runtime.");
+    }
+    const result = await placeAssetsCep({ captionClips: [], sfxClips: sfxAssets, bin: options.bin });
+    if (result.failed > 0) {
+      console.warn(`[CaptionX] ${result.failed} SFX clips failed to place via CEP host.`);
+    }
+    return result;
+  }
 
   const { project, sequence } = await getActiveSequence();
 
@@ -147,27 +196,36 @@ export async function importAndPlaceSFX(sfxAssets) {
 export async function downloadFileToTemp(assets) {
   if (!assets || assets.length === 0) return [];
 
-  // UXP storage.localFileSystem gives access to the local filesystem
-  const tempFolder = await storage.localFileSystem.getTemporaryFolder();
-  const localAssets = [];
+  // ── UXP path ──────────────────────────────────────────────────────────────
+  if (app && storage) {
+    const tempFolder = await storage.localFileSystem.getTemporaryFolder();
+    const localAssets = [];
 
-  for (const asset of assets) {
-    const fileName = asset.asset_url.split("/").pop().split("?")[0];
-    const localFile = await tempFolder.createFile(fileName, { overwrite: true });
+    for (const asset of assets) {
+      const fileName = asset.asset_url.split("/").pop().split("?")[0];
+      const localFile = await tempFolder.createFile(fileName, { overwrite: true });
 
-    // Fetch remote asset
-    const response = await fetch(asset.asset_url);
-    if (!response.ok) {
-      throw new Error(`Failed to download asset: ${asset.asset_url} (${response.status})`);
+      // Fetch remote asset
+      const response = await fetch(asset.asset_url);
+      if (!response.ok) {
+        throw new Error(`Failed to download asset: ${asset.asset_url} (${response.status})`);
+      }
+      const buffer = await response.arrayBuffer();
+      await localFile.write(buffer, { format: storage.formats.binary });
+
+      localAssets.push({
+        ...asset,
+        localPath: localFile.nativePath, // absolute local path Premiere can read
+      });
     }
-    const buffer = await response.arrayBuffer();
-    await localFile.write(buffer, { format: storage.formats.binary });
 
-    localAssets.push({
-      ...asset,
-      localPath: localFile.nativePath, // absolute local path Premiere can read
-    });
+    return localAssets;
   }
 
-  return localAssets;
+  // ── CEP fallback (classic CEP panel — no UXP runtime) ─────────────────────
+  const { downloadAssetsCep, cepAvailable } = await import("../api/cep");
+  if (cepAvailable()) {
+    return downloadAssetsCep(assets);
+  }
+  throw new Error("Neither the UXP nor CEP runtime is available to download rendered assets.");
 }

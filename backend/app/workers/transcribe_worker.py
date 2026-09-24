@@ -15,6 +15,7 @@ from app.services.transcription import transcribe_audio, group_words_into_phrase
 from app.core.storage import download_from_s3, upload_json_to_s3
 from app.core.database import AsyncSessionLocal
 from app.models.job import Job, JobStatus
+from app.models.user import User
 
 
 class TranscribeTask(Task):
@@ -43,7 +44,13 @@ def transcribe_task(self, job_id: str, s3_key: str, language: str, caption_mode:
         async with AsyncSessionLocal() as db:
             job = await db.get(Job, job_id)
             if not job:
-                return
+                # The API now commits before dispatching, so a missing row here
+                # is unexpected — retry shortly instead of silently dropping the
+                # job (a silent return leaves the panel stuck at 0% forever).
+                raise self.retry(
+                    exc=RuntimeError(f"Transcribe job {job_id} not visible yet, retrying"),
+                    countdown=5,
+                )
 
             async def update(status, progress, message=None):
                 job.status = status
@@ -64,7 +71,9 @@ def transcribe_task(self, job_id: str, s3_key: str, language: str, caption_mode:
 
                 # ── WhisperX transcription ────────────────────────────────────
                 await update(JobStatus.running, 20, "Running Whisper transcription…")
-                words = transcribe_audio(tmp_path, language=language)
+                recovery_stats = {}
+                words = transcribe_audio(tmp_path, language=language, stats=recovery_stats)
+                recovered = int(recovery_stats.get("recovered_total") or 0)
 
                 # ── Group into phrases ────────────────────────────────────────
                 await update(JobStatus.running, 85, "Grouping into phrases…")
@@ -77,6 +86,7 @@ def transcribe_task(self, job_id: str, s3_key: str, language: str, caption_mode:
                     "phrases": phrases,
                     "word_count": len(words),
                     "phrase_count": len(phrases),
+                    "recovered_words": recovered,
                 }
 
                 # Upload result JSON to S3 for persistence
@@ -86,7 +96,10 @@ def transcribe_task(self, job_id: str, s3_key: str, language: str, caption_mode:
                 job.result_json = json.dumps(result)
                 job.status = JobStatus.done
                 job.progress = 100
-                job.message = f"Complete — {len(phrases)} captions generated"
+                job.message = (
+                    f"Complete — {len(phrases)} captions generated"
+                    + (f" ({recovered} missing words recovered)" if recovered else "")
+                )
                 job.completed_at = datetime.now(timezone.utc)
                 await db.commit()
 

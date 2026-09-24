@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
-COPY requirements.gpu.txt .
+COPY requirements.txt requirements.gpu.txt ./
 RUN pip install --no-cache-dir -r requirements.gpu.txt
 
 COPY . .

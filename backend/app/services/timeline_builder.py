@@ -70,9 +70,10 @@ def build_timeline_payload(
 
 def _make_cdn_url(local_path: str) -> str:
     """
-    Converts a local worker filesystem path to a CDN URL.
-    Workers upload to S3 first; this builds the public URL.
+    Converts a worker-side S3 key (or legacy local path) to a download URL.
+    Workers store the S3 key in `local_path`; this builds the public URL.
     """
-    # Extract the filename from the local path
-    filename = local_path.replace("\\", "/").split("/")[-1]
-    return f"{settings.CDN_BASE_URL}/renders/{filename}"
+    # Workers pass S3-style keys like "renders/<job_id>/caption_0000.mov".
+    # Serve them via the API's static mount (CDN_BASE_URL=http://localhost:8000/assets).
+    key = local_path.replace("\\", "/").lstrip("/")
+    return f"{settings.CDN_BASE_URL.rstrip('/')}/{key}"

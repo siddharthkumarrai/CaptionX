@@ -1,12 +1,20 @@
 """app/workers/celery_app.py — Celery application instance."""
+import os
+
 from celery import Celery
 from app.core.config import settings
+
+worker_queue = os.getenv("CELERY_QUEUE")
+worker_modules = {
+    "cpu": ["app.workers.render_worker", "app.workers.transcribe_worker"],
+    "gpu": ["app.workers.transcribe_worker"],
+}.get(worker_queue, [])
 
 celery_app = Celery(
     "captionx",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.workers.transcribe_worker", "app.workers.render_worker"],
+    include=worker_modules,
 )
 
 celery_app.conf.update(

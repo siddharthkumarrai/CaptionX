@@ -59,3 +59,30 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Local Python environments (project venvs live outside version control)
+.venv_py311/
+.venv_real/
+list/
+
+# Test / build caches
+.pytest_cache/
+
+# Local run logs and generated reports (regenerated on every run)
+*.log
+tests/golden_last_report.txt
+
+# Plugin build artifacts
+plugin/build.log
+plugin/.debug
+
+# Duplicate media (canonical golden fixture lives in assets/ and is LFS-tracked)
+backend/assets/
+backend/storage/
+
+# Binary audio fixtures are hosted outside git (see docs); only the canonical
+# video fixture is versioned via Git LFS.
+*.wav
+
+# Accidental root-level npm stub (real lockfile is plugin/package-lock.json)
+/package-lock.json

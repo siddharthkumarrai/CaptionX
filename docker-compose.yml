@@ -37,6 +37,11 @@ services:
       dockerfile: Dockerfile.api
     restart: unless-stopped
     env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://captionx:captionx@postgres:5432/captionx
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
     ports:
       - "8000:8000"
     depends_on:
@@ -47,6 +52,7 @@ services:
     volumes:
       - ./backend:/app
       - ./assets:/app/assets:ro
+      - captionx-storage:/app/storage
     command: >
       uvicorn main:app
       --host 0.0.0.0
@@ -54,23 +60,35 @@ services:
       --reload
       --log-level info
 
-  # ── Celery CPU Worker (PNG rendering) ─────────────────────────────────────
+  # ── Celery CPU Worker (renders + transcribes via CPU fallback) ───────────────
+  # Consumes the `cpu` queue (caption rendering) and the `gpu` queue as a
+  # fallback when no NVIDIA GPU worker is available. On NVIDIA hosts, the
+  # `celery-gpu` service below handles the `gpu` queue directly (CUDA).
   celery-cpu:
     build:
       context: ./backend
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile.cpu
     restart: unless-stopped
     env_file: ./backend/.env
+    environment:
+      CELERY_QUEUE: cpu
+      CELERY_QUEUES: ${CELERY_QUEUES:-cpu,gpu}
+      DATABASE_URL: postgresql+asyncpg://captionx:captionx@postgres:5432/captionx
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
     depends_on:
       - redis
       - postgres
     volumes:
       - ./backend:/app
       - ./assets:/app/assets:ro
+      - whisper_models:/root/.cache/whisperx
+      - captionx-storage:/app/storage
     command: >
       celery -A app.workers.celery_app worker
-      --queues cpu
-      --concurrency 4
+      --queues ${CELERY_QUEUES:-cpu,gpu}
+      --concurrency 2
       --loglevel info
       --hostname cpu-worker@%%h
 
@@ -81,6 +99,12 @@ services:
       dockerfile: Dockerfile.gpu
     restart: unless-stopped
     env_file: ./backend/.env
+    environment:
+      CELERY_QUEUE: gpu
+      DATABASE_URL: postgresql+asyncpg://captionx:captionx@postgres:5432/captionx
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
     depends_on:
       - redis
       - postgres
@@ -88,6 +112,7 @@ services:
       - ./backend:/app
       - ./assets:/app/assets:ro
       - whisper_models:/root/.cache/whisperx
+      - captionx-storage:/app/storage
     command: >
       celery -A app.workers.celery_app worker
       --queues gpu
@@ -117,3 +142,4 @@ volumes:
   pgdata:
   redisdata:
   whisper_models:
+  captionx-storage:

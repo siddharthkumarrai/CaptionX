@@ -1,0 +1,29 @@
+# Dockerfile.cpu — CPU worker: runs WhisperX transcription (CPU fallback) + caption rendering.
+# Used on hosts without an NVIDIA GPU. On CUDA hosts prefer Dockerfile.gpu.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libglib2.0-0 \
+    libgomp1 \
+    git \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt requirements.cpu.txt ./
+RUN pip install --no-cache-dir -r requirements.cpu.txt
+
+# ctranslate2's native shared library requests an executable stack, which the
+# container runtime rejects with "Invalid argument". Clear that flag so the
+# library loads on GPU-less hosts (AMD/Intel/no-GPU). Safe: CTranslate2's CPU
+# kernels do not require an executable stack.
+RUN find /usr/local/lib/python* -name 'libctranslate2*.so*' -exec patchelf --clear-execstack {} \;
+
+COPY . .
+
+EXPOSE 8000

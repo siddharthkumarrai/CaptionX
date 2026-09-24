@@ -22,14 +22,53 @@ const CAPTION_MODES = [
   { value: "full_phrase",label: "Full Phrase" },
 ];
 
-export default function StylePicker({ styleConfig, onChange }) {
+// One-click presets (same set as PreviewPanel shortcuts).
+const STYLE_PRESETS = [
+  { id: "kinetic", name: "Kinetic Focus", font_family: "Montserrat-ExtraBold", font_size: 96, text_color: "#FFFFFF", highlight_color: "#FFD700", bg_color: "#000000", bg_opacity: 0, animation_preset: "pop_scale" },
+  { id: "clean", name: "Clean Word Progress", font_family: "Poppins-Bold", font_size: 80, text_color: "#1A1A1A", highlight_color: "#1A1A1A", bg_color: "#FFFFFF", bg_opacity: 0.95, animation_preset: "fade_in" },
+  { id: "impact", name: "Impact Pulse", font_family: "Anton", font_size: 110, text_color: "#00E5FF", highlight_color: "#FFFFFF", bg_color: "#000000", bg_opacity: 0.55, animation_preset: "bounce" },
+  { id: "editorial", name: "Editorial Serif", font_family: "Poppins-Bold", font_size: 72, text_color: "#FFFFFF", highlight_color: "#FFB84D", bg_color: "#000000", bg_opacity: 0.35, animation_preset: "slide_up" },
+];
+
+export default function StylePicker({ styleConfig, onChange, captionLayout, onLayoutChange }) {
   function update(key, value) {
     onChange({ ...styleConfig, [key]: value });
+  }
+
+  function applyPreset(p) {
+    onChange({
+      ...styleConfig,
+      font_family: p.font_family,
+      font_size: p.font_size,
+      text_color: p.text_color,
+      highlight_color: p.highlight_color,
+      bg_color: p.bg_color,
+      bg_opacity: p.bg_opacity,
+      animation_preset: p.animation_preset,
+    });
   }
 
   return (
     <div>
       <p className="section-header">Caption Style</p>
+      {/* One-click presets (viral-caption UX research) */}
+      <div className="field-group">
+        <label className="field-label">Style presets</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+          {STYLE_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              className="btn-ghost"
+              onClick={() => applyPreset(p)}
+              title={`${p.font_family} · ${p.animation_preset}`}
+              style={{ textAlign: "left" }}
+            >
+              <span style={{ fontWeight: "800", color: "#e0e0e0", display: "block", fontSize: "11px" }}>{p.name}</span>
+              <span style={{ fontSize: "9px", color: "#888" }}>{p.animation_preset}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Font Family */}
       <div className="field-group">
@@ -170,6 +209,31 @@ export default function StylePicker({ styleConfig, onChange }) {
 
       {/* Style Preset Save */}
       <hr className="divider" />
+      <p className="section-header">Caption position</p>
+      <div className="field-group">
+        <label className="field-label">Placement — X {(captionLayout?.x ?? 960)}px · Y {(captionLayout?.y ?? 830)}px</label>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          <span style={{ fontSize: "10px", color: "#888", width: "14px" }}>X</span>
+          <input
+            type="range" min="0" max="1920" step="1"
+            value={captionLayout?.x ?? 960}
+            onChange={(e) => onLayoutChange && onLayoutChange({ x: Number(e.target.value), y: captionLayout?.y ?? 830 })}
+            style={{ flex: 1 }}
+          />
+        </div>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "6px" }}>
+          <span style={{ fontSize: "10px", color: "#888", width: "14px" }}>Y</span>
+          <input
+            type="range" min="0" max="1080" step="1"
+            value={captionLayout?.y ?? 830}
+            onChange={(e) => onLayoutChange && onLayoutChange({ x: captionLayout?.x ?? 960, y: Number(e.target.value) })}
+            style={{ flex: 1 }}
+          />
+        </div>
+        <p style={{ fontSize: "10px", color: "#666", marginTop: "6px" }}>
+          Tip: drag the caption directly on the preview for pixel control — render matches preview.
+        </p>
+      </div>
       <button className="btn-primary" onClick={() => alert("Preset saving coming in v1.1")}>
         💾 Save as Preset
       </button>

@@ -1,0 +1,12 @@
+# CPU-only worker: runs transcription via WhisperX on CPU + renders captions.
+# Use this on hosts without an NVIDIA GPU (AMD Radeon / Intel / no GPU).
+# The CUDA GPU worker (requirements.gpu.txt) is optional and faster when present.
+-r requirements.txt
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
+torchaudio==2.2.2+cpu
+numpy<2
+matplotlib>=3.7,<4
+transformers==4.41.2
+whisperx==3.3.1
